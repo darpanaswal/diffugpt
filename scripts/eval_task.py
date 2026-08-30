@@ -163,6 +163,45 @@ def final_concept(s):
     return w[-1].lower() if w else ""
 
 
+# --------------------------------------------------------------------------- #
+#  ProsQA bucket gating -- mirrors DLIG/experiments/prosqa/bucket_prosqa.py's
+#  q_parse/pred_subject/label_row EXACTLY. raw exact/concept_match (above) can
+#  match on the WRONG subject (e.g. answered about Sally when asked about
+#  Bob); success/fail/off-manifold gates on subject match first, which is the
+#  metric that should actually be reported.
+# --------------------------------------------------------------------------- #
+_PROSQA_Q = re.compile(r"Is (\w+) a (\w+) or (\w+)\s*\?")
+
+
+def prosqa_q_parse(question):
+    m = _PROSQA_Q.search(question)
+    if not m:
+        return None, None
+    return m.group(1).lower(), (m.group(2).lower(), m.group(3).lower())
+
+
+def prosqa_pred_subject(pred):
+    m = re.search(r"\b([A-Z][a-z]+)\b", pred)
+    return m.group(1).lower() if m else ""
+
+
+def prosqa_bucket(question, pred, exact, concept_match):
+    q_subj, opts = prosqa_q_parse(question)
+    pc = final_concept(pred)
+    ps = prosqa_pred_subject(pred)
+    subj_match = (q_subj is not None) and (ps == q_subj)
+    answer_valid = (opts is not None) and (pc in opts)
+    if not subj_match:
+        return "subj_wrong"
+    if exact:
+        return "correct"
+    if concept_match:
+        return "concept_only"
+    if answer_valid:
+        return "wrong_valid"
+    return "concept_invalid"
+
+
 def load_prosqa_data(path):
     return json.load(open(path))
 
@@ -427,6 +466,8 @@ def main():
 
     n = n_correct = n_exact = n_concept = n_unreadable = 0
     per_class = {0: [0, 0], 1: [0, 0]}
+    bucket_counts = {"correct": 0, "concept_only": 0, "wrong_valid": 0,
+                      "concept_invalid": 0, "subj_wrong": 0}
     pbar = tqdm(total=len(items), desc=f"[diffugpt] {args.task}", unit="ex")
     with open(out_file, "w") as fout:
         for start in range(0, len(items), bs):
@@ -482,6 +523,9 @@ def main():
                     n_concept += int(concept)
                     rec = {"question": it["q"], "gold": gold, "gen": gen_text,
                            "pred_answer": pred, "exact": exact, "concept_match": concept}
+                    bucket = prosqa_bucket(it["q"], pred, exact, concept)
+                    bucket_counts[bucket] += 1
+                    rec["bucket"] = bucket
 
                 fout.write(json.dumps(rec) + "\n")
 
@@ -489,8 +533,9 @@ def main():
             if args.task == "wic":
                 pbar.set_postfix(acc=f"{100*n_correct/n:.1f}%")
             else:
+                success = bucket_counts["correct"] + bucket_counts["concept_only"]
                 pbar.set_postfix(exact=f"{100*n_exact/n:.1f}%",
-                                  concept=f"{100*n_concept/n:.1f}%")
+                                  success=f"{100*success/n:.1f}%")
     pbar.close()
 
     print(f"\n[RESULT] task={args.task}  n={n}  (chance = 0.500)")
@@ -504,8 +549,19 @@ def main():
         print(f"  diff-sense (0)  : {100*a0:.2f}%   ({per_class[0][0]}/{per_class[0][1]})  correct=No")
         print(f"  BALANCED        : {100*balanced:.2f}%   <-- the honest number")
     else:
-        print(f"  answer_exact   : {100*n_exact/n:.2f}%")
-        print(f"  target_concept : {100*n_concept/n:.2f}%   (chance ~50%, CoT-GPT2 ref 77.5%)")
+        success = bucket_counts["correct"] + bucket_counts["concept_only"]
+        fail = bucket_counts["wrong_valid"]
+        off = bucket_counts["subj_wrong"] + bucket_counts["concept_invalid"]
+        print(f"  answer_exact     : {100*n_exact/n:.2f}%   (unguarded string match, "
+              f"kept for reference)")
+        print(f"  raw concept_match: {100*n_concept/n:.2f}%   (unguarded -- can match "
+              f"on the WRONG subject; not the metric to report)")
+        for b, c in bucket_counts.items():
+            print(f"  bucket {b:16}: {c:4}  ({100*c/n:5.1f}%)")
+        print(f"  SUCCESS (correct + concept_only, subject-gated): "
+              f"{100*success/n:.2f}%   ({success}/{n})  <-- the metric to report")
+        print(f"  fail   (wrong_valid)                          : {100*fail/n:.2f}%   ({fail}/{n})")
+        print(f"  off-manifold (subj_wrong + concept_invalid)   : {100*off/n:.2f}%   ({off}/{n})")
     print(f"  preds -> {out_file}")
 
 
