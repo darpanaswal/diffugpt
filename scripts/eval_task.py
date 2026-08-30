@@ -313,7 +313,7 @@ def main():
     ap.add_argument("--data", default=None,
                     help="Defaults to the per-task file under LLaMA-Factory/data/.")
     ap.add_argument("--n_samples", type=int, default=500)
-    ap.add_argument("--batch_size", type=int, default=32)
+    ap.add_argument("--batch_size", type=int, default=1)
     ap.add_argument("--gen_len", type=int, default=None,
                     help="Masked generation length; defaults to DLIG's own "
                          "per-task default (wic=8, prosqa=64) if omitted -- "
