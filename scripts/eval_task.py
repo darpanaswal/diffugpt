@@ -33,7 +33,7 @@ loop), and no separator/checkpoint-dir requirement -- pass the base model
 directory to --model_name.
 
 Usage (defaults already match DLIG/scripts/eval_task.py's defaults --
-gen_steps=12, max_new_tokens/gen_len=8/64/64 -- so no override needed for a
+gen_steps=64, max_new_tokens/gen_len=8/64/64 -- so no override needed for a
 matched run):
   python -u -m scripts.eval_task --task wic \
       --model_name models/diffugpt-m-wic --data LLaMA-Factory/data/wic_test_raw.jsonl
@@ -360,12 +360,11 @@ def main():
                          "bare run already matches DLIG/scripts/eval_task.py. "
                          "If overridden, pass the SAME value there as "
                          "--max_new_tokens.")
-    ap.add_argument("--diffusion_steps", type=int, default=12,
-                    help="Denoising steps. Defaults to DLIG's own value (12), "
-                         "NOT this repo's own eval default (64), so a bare "
-                         "run already matches DLIG/scripts/eval_task.py. If "
-                         "overridden, pass the SAME value there as "
-                         "--gen_steps.")
+    ap.add_argument("--diffusion_steps", type=int, default=64,
+                    help="Denoising steps. Defaults to 64 (the training "
+                         "default and DLIG/scripts/eval_task.py's --gen_steps "
+                         "default), so a bare run is already matched. If "
+                         "overridden, pass the SAME value there.")
     ap.add_argument("--logits_temp", type=float, default=0.95)
     ap.add_argument("--topp_temp", type=float, default=0.9)
     ap.add_argument("--shift", type=bool, default=True)   # do not change (DiffuGPT)
